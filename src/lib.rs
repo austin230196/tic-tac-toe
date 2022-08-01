@@ -12,8 +12,47 @@ impl GameBoard {
         }
     }
 
-    pub fn board_status(&self) -> &[[Option<Card>; 3]] {
+    pub fn board_status(&self) -> &[[Option<Card>; 3]; 3] {
         &self.board
+    }
+
+    pub fn get_available_spaces(&self) -> Vec<(u8, u8)> {
+        let mut v = vec![];
+        for (i, r) in self.board.iter().enumerate() {
+            for (j, c) in r.iter().enumerate() {
+                if c.is_none() {
+                    let t = ((i+ 1) as u8, (j+ 1) as u8);
+                    v.push(t);
+                }else {continue;}
+            }
+        }
+        v
+    }
+
+    pub fn get_user_board_entries(&self, card: &Option<Card>) -> Vec<(u8, u8)> {
+        let mut v = vec![];
+        for (i, r) in self.board.iter().enumerate() {
+            for (j, c) in r.iter().enumerate() {
+                if c == card {
+                    let t = ((i + 1) as u8, (j + 1) as u8);
+                    v.push(t);
+                }else {continue;}
+            }
+        }
+        v
+    }
+
+    pub fn get_winning_patterns(&self) -> Vec<((u8, u8), (u8, u8), (u8, u8))>{
+        let mut v = vec![];
+        v.push(((1, 1), (1, 2), (1, 3)));
+        v.push(((1, 1), (2, 1), (3, 1)));
+        v.push(((1, 1), (2, 2), (3, 3)));
+        v.push(((2, 1), (2, 2), (2, 3)));
+        v.push(((3, 1), (3, 2), (3, 3)));
+        v.push(((1, 3), (2, 2), (3, 1)));
+        v.push(((1, 2), (2, 2), (3, 2)));
+        v.push(((1, 3), (2, 3), (3, 3)));
+        v
     }
 }
 
@@ -47,8 +86,86 @@ impl Game {
         }
     }
 
-    pub fn play(&mut self, entry: Vec<u32>, card: Option<Card>){
-        self.board.board[(entry[0] as usize) - 1][(entry[1] as usize) - 1] = card;
+    pub fn play(&mut self, entry: (u8, u8)){
+        let (r, c) = entry;
+        self.board.board[(r - 1) as usize][(c - 1) as usize] = self.players[self.turn].card;
+    
+
+        //check if the user has won
+        let patterns = self.board.get_winning_patterns();
+        let user_entries = self.board.get_user_board_entries(&self.players[self.turn].card);
+
+        let mut change_turn = || {
+            if self.turn == 0 {
+                self.turn = 1;
+            }else {
+                self.turn = 0;
+            }
+        };
+
+
+        //user entry must be 3 to be able to qualify as a winner
+        if user_entries.len() < 3 {
+            //move the turn to the next user
+            change_turn()
+        }else {
+            //at this point the entry by the user is 3 or more so we check if the user has won
+            //filter out the patterns that dont match
+            let p = patterns.clone();
+            for (j, i) in patterns.into_iter().enumerate() {
+                let (f, s, t) = i;
+                let i = vec![f, s, t];
+                let is_last = || -> bool {
+                    p.len() - 1 == j
+                };
+                match user_entries.as_slice() {
+                    [first, second, third] => {
+                        //at this point only 3 entries were received
+                        if !i.contains(first) && !i.contains(second) && !i.contains(third) {
+                            //change turn
+                            if !is_last() {
+                                continue;
+                            }else {
+                                change_turn();
+                                break;
+                            }
+                        }else if i.contains(first) && i.contains(second) && i.contains(third) {
+                            //at this point the user has won
+                            println!("Player {:?} has won", self.players[self.turn]);
+                            self.status = GameStatus::Finished;
+                            break;
+                        }else {
+                            if !is_last() {
+                                continue;
+                            }else {
+                                change_turn();
+                                break;
+                            }
+                        }
+                    },
+                    [first, second, third, fourth] => {
+                        //at this point the user entered more than 3 entries
+                        if (i.contains(first) && i.contains(second) && (i.contains(third) || i.contains(fourth))) || 
+                        (i.contains(third) && i.contains(fourth) && (i.contains(first) || i.contains(second))) {
+                            //at this point the user has won
+                            println!("Player {:?} has won", self.players[self.turn]);
+                            self.status = GameStatus::Finished;
+                            break;
+                        }else {
+                            if !is_last() {
+                                continue;
+                            }else {
+                                change_turn();
+                                break;
+                            }
+                        }
+                    },
+                    entry @ _ => {
+                        println!("Entries: {:?}", entry);
+                    }
+                }
+            }
+        }
     }
 
     pub fn start(&mut self) -> bool {
@@ -68,12 +185,12 @@ impl Game {
         }
     }
 
-    pub fn add_player(mut self, player: Player) -> Result<Game, &'static str> {
+    pub fn add_player(&mut self, player: Player) -> bool {
         if self.players.len() == 2 {
-            return Err("Can't add another player to an already full game");
+            return false;
         }
         self.players.push(player);
-        Ok(self)
+        true
     }
 
 

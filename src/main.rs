@@ -52,17 +52,20 @@ mod helpers {
 
 
     ///function prints out the board
-    pub fn print_board(board: &[[Option<Card>; 3]]){
+    pub fn print_board(game: &Game){
+        let board = game.board.board_status();
         for b in board {
             //array destructuring
             let [c, d, e] = b;
-            println!("{:#?} | {:#?} | {:#?} \n", c, d, e);
+            println!("{:?} | {:?} | {:?} \n", c, d, e);
         }
     }
 
     
     ///function for getting putting the available_entries in a hashmap
-    pub fn get_available_entries(board: &[[Option<Card>; 3]]) -> HashMap<(u32, u32), &Option<Card>> {
+    pub fn get_available_entries(game: &Game){
+        println!("Please pick an entry to enter card");
+        let board = game.board.board_status();
         let mut map = HashMap::new();
         for (i, b) in board.iter().enumerate() {
             for (j, c) in b.iter().enumerate() {
@@ -72,14 +75,94 @@ mod helpers {
                 }else {continue;}
             }
         }
-        map
+        for (key, card) in map.into_iter() {
+            let (k, v) = key;
+            println!("{k},{v}: {:?}", card);
+        }
     }
 
 
-    pub fn print_entries(entries: HashMap<(u32, u32), &Option<Card>>){
-        for (key, value) in entries.into_iter() {
-            let (row, column) = key;
-            println!("{row},{column}: {:#?}", value);
+    ///this function prepares the game plus adds the players
+    pub fn setup_game(bot: bool, chosen: Option<Card>) -> Game {
+        //we create a new Gameboard
+        let gameboard = GameBoard::new();
+
+        //then we create a Game
+        let mut newgame = Game::new(gameboard, bot);
+
+        //create the player
+        let mut player = Player::new();
+
+        //add the player to the game
+        player.set_card(chosen);
+        let has_added_player = newgame.add_player(player);
+        if !has_added_player {
+            panic!("#main: Unexpected error adding player to the card");
+        }
+
+
+        //get the available card
+        let available_card = newgame.available_cards().expect("#main: Unexpected error getting the available cards")[0];
+        
+        //then we get the position of the user with no card
+        let position = newgame.get_position_of_user_with_no_card().expect("#main: Unexpected error getting the position of the user with empty card");
+
+        //then assign the remaining card to the user
+        newgame.players[position].set_card(Some(available_card));
+
+        newgame
+
+    }
+
+
+    //check the pattern of the user's input
+    pub fn check_user_entry_pattern(game: &Game, input: String) -> Option<(u8, u8)>{
+        let input = input.trim();
+        if input.is_empty() {
+            println!("Input cannnot be empty please enter a valid input");
+            None
+        }else if !input.contains(","){
+            println!("Wrong input format (row number, column number)");
+            None
+        }else {
+            let mut e = input.split(",");
+            let row = e.next();
+            let column = e.next();
+            if row.unwrap().trim().is_empty() || row.is_none() {
+                println!("Invalid row entered \n {} is invalid", row.unwrap());
+                return None;
+            }
+            if column.unwrap().trim().is_empty() || column.is_none() {
+                println!("Invalid column entered \n {} is invalid", column.unwrap());
+                return None;
+            }
+
+            //at this point the row and column entered is okay
+            let row = row.unwrap().parse::<u8>();
+            let column = column.unwrap().parse::<u8>();
+
+            //now check if the entry was an integer
+            if row.is_err() {
+                println!("Row must be a valid integer");
+                return None;
+            }
+            if column.is_err() {
+                println!("Column must be a valid integer");
+                return None;
+            }
+
+            //at this poin the entry is a valid integer
+            let row = row.unwrap();
+            let column = column.unwrap();
+            println!("Row: {row}, Column: {column}");
+            let entry = (row, column);
+            let available_entries = game.board.get_available_spaces();
+            if available_entries.contains(&entry) {
+                return Some(entry);
+            }else {
+                println!("{:?} is not available", entry);
+                return None;
+            }
         }
     }
     
@@ -114,7 +197,6 @@ fn main() {
     
         //then we check if the user picked a valid card
         chosen = helpers::check_user_card(cards, user_input);
-        println!("{:#?}", &chosen);
 
         if chosen.is_some() {
             break;
@@ -122,52 +204,36 @@ fn main() {
     }
 
     //at this point the chosen card is valid
-    //we create a new Gameboard
-    let gameboard = GameBoard::new();
-
-    //then we create a Game
-    let newgame = Game::new(gameboard, true);
-
-    //create the player
-    let mut player = Player::new();
-    player.set_card(chosen);
-    let mut newgame = newgame.add_player(player).expect("#main: Unexpected error adding player to the card");
-
-    //get the available card and assign it to the bot
-    let available_card = newgame.available_cards().expect("#main: Unexpected error getting the available cards")[0];
-    let position = newgame.get_position_of_user_with_no_card().expect("#main: Unexpected error getting the position of the user with empty card");
-    newgame.players[position].set_card(Some(available_card));
-
-    todo!();
-    ///REFACTOR LOGIC INTO TINY FUNCTIONS
+    //setup game
+    let mut newgame = helpers::setup_game(true, chosen);
 
     //then we start the game
-    let started = newgame.start();
+    let _ = newgame.start();
 
-    //get the available boards
-    let board = newgame.board.board_status();
+    //this is the loop of a game that has started
+    while newgame.status != GameStatus::Finished {
+        //we need to print out the board to the user
+        helpers::print_board(&newgame);
 
-    //at this point the game has started
-    //get available entries
-    let entries = helpers::get_available_entries(board);
+        //get the players turn and print it to the console
+        let user_turn = &newgame.players[newgame.turn];
+        println!("It's player {:?} turn", user_turn);
+    
+        //print available entries to the user
+        helpers::get_available_entries(&newgame);
 
-    //we need to print out the board to the user
-    helpers::print_board(board);
+        //then now we read the users input
+        let user_input = helpers::get_user_input();
 
-    //print out available entries
-    helpers::print_entries(entries);
-    let mut entry = String::new();
-    let mut entry_arr;
-    println!("Pick an entry to play your card \n");
-    io::stdin().read_line(&mut entry).expect("Failed to read user input");
-    entry_arr = entry.trim().split(",").map(|e| String::from(e).parse().unwrap_or_else(|_| 0)).collect::<Vec<u32>>();
-    while entry_arr.len() != 2 || entry_arr[0] == 0 {
-        entry = String::new();
-        println!("Pick an entry to play your card \n");
-        io::stdin().read_line(&mut entry).expect("Failed to read user input");
-        entry_arr = entry.trim().split(",").map(|e| String::from(e).parse().unwrap_or_else(|_| 0)).collect::<Vec<u32>>();
+        //authenticate user entry
+        let slot_chosen = helpers::check_user_entry_pattern(&newgame, user_input);
+        if slot_chosen.is_none() {
+            continue;
+        } else {
+            //at this point the user entered the right entry
+            //so we play it on the board
+            newgame.play(slot_chosen.unwrap());
+            helpers::print_board(&newgame);
+        }
     }
-    println!("{:#?}", entry_arr);
-    newgame.play(entry_arr, newgame.players[newgame.turn].card);
-    println!("the game is {:?} with available cards : {:#?}, empty card position: {:#?} has started ? {:#?}", newgame, available_card, position, started);
 }
